@@ -1,0 +1,61 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>rosbot_plus_description</name>
+  <version>0.0.1</version>
+  <description>
+    Research simulation of a ROSbot-inspired platform with rear-wheel drive,
+    front Ackermann steering, independent suspension, planar lidar and RGB-D
+    camera. Includes common Wheeltec-compatible ROS topic names.
+  </description>
+  <maintainer email="k.abdrahamane22@gmail.com">dev</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+
+  <depend>xacro</depend>
+  <depend>robot_state_publisher</depend>
+  <depend>joint_state_publisher</depend>
+  <depend>joint_state_publisher_gui</depend>
+  <depend>rviz2</depend>
+  <depend>tf2_ros</depend>
+
+  <!-- Perception: FAST-LIO -> elevation map (doc section 4) -->
+  <depend>grid_map_msgs</depend>
+  <depend>grid_map_ros</depend>
+
+  <!-- Simulation (Gazebo Classic, Ubuntu 22.04 / ROS 2 Humble) -->
+  <depend>gazebo_ros</depend>
+  <exec_depend>gazebo_plugins</exec_depend>
+  <depend>gazebo_ros2_control</depend>
+
+  <!-- Control -->
+  <depend>ros2_control</depend>
+  <depend>ros2_controllers</depend>
+  <depend>controller_manager</depend>
+  <depend>ackermann_steering_controller</depend>
+  <depend>joint_state_broadcaster</depend>
+  <exec_depend>joy</exec_depend>
+  <exec_depend>teleop_twist_joy</exec_depend>
+  <exec_depend>teleop_twist_keyboard</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+  <test_depend>python3-yaml</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

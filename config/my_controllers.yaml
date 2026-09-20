@@ -1,0 +1,33 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 100
+    use_sim_time: true
+    steering_cont:
+      type: ackermann_steering_controller/AckermannSteeringController
+    joint_broad:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+steering_cont:
+  ros__parameters:
+    use_sim_time: true
+    # Humble expects right then left for both axles.
+    rear_wheels_names: [RR_Joint, RL_Joint]
+    front_wheels_names: [FR_steering_joint, FL_steering_joint]
+    front_steering: true
+    wheelbase: 0.53
+    front_wheel_track: 0.59
+    rear_wheel_track: 0.59
+    front_wheels_radius: 0.127
+    rear_wheels_radius: 0.127
+    position_feedback: false
+    open_loop: false
+    use_stamped_vel: false
+    reference_timeout: 0.5
+    reduce_wheel_speed_until_steering_reached: true
+    base_frame_id: base_footprint
+    odom_frame_id: odom
+    enable_odom_tf: true
+
+joint_broad:
+  ros__parameters:
+    use_sim_time: true

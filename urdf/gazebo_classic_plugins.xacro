@@ -1,0 +1,159 @@
+<?xml version="1.0" ?>
+<robot name="rosbot_plus" xmlns:xacro="http://www.ros.org/wiki/xacro">
+<!-- Gazebo Classic extensions, plugins and contact properties. -->
+
+<xacro:macro name="wheel_gazebo" params="link_name">
+  <gazebo reference="${link_name}">
+    <!-- Limit penetration correction instead of ejecting a wheel at impact. -->
+    <kp>1000000</kp>
+    <kd>100</kd>
+    <maxVel>0.1</maxVel>
+    <minDepth>0.001</minDepth>
+    <visual>
+      <material>
+        <ambient>0.1 0.1 0.1 1</ambient>
+        <diffuse>0.15 0.15 0.15 1</diffuse>
+        <specular>0.1 0.1 0.1 1</specular>
+      </material>
+    </visual>
+    <collision name="collision">
+      <surface>
+        <friction>
+          <ode>
+            <mu>${wheel_mu}</mu>
+            <mu2>${wheel_mu2}</mu2>
+            <fdir1>1 0 0</fdir1>
+          </ode>
+        </friction>
+      </surface>
+    </collision>
+  </gazebo>
+</xacro:macro>
+
+<xacro:wheel_gazebo link_name="FR_Link"/>
+<xacro:wheel_gazebo link_name="FL_Link"/>
+<xacro:wheel_gazebo link_name="RL_Link"/>
+<xacro:wheel_gazebo link_name="RR_Link"/>
+
+<!-- ODE honours these Classic Gazebo joint extensions for the passive
+     prismatic suspension. -->
+<xacro:macro name="suspension_gazebo" params="joint_name">
+  <gazebo reference="${joint_name}">
+    <springStiffness>${suspension_stiffness}</springStiffness>
+    <springReference>0.0</springReference>
+    <implicitSpringDamper>true</implicitSpringDamper>
+    <!-- Damping is supplied by the URDF joint's dynamics element. -->
+  </gazebo>
+</xacro:macro>
+
+<xacro:suspension_gazebo joint_name="FR_suspension_joint"/>
+<xacro:suspension_gazebo joint_name="FL_suspension_joint"/>
+<xacro:suspension_gazebo joint_name="RL_suspension_joint"/>
+<xacro:suspension_gazebo joint_name="RR_suspension_joint"/>
+
+<!-- Planar 2D laser scanner. Gazebo Classic publishes a native
+     sensor_msgs/LaserScan on /scan; it is intentionally not a Mid-360 or a
+     PointCloud2 sensor. Keep lidar_tilt_deg at 0 for a horizontal scan. -->
+<xacro:if value="$(arg enable_lidar)">
+  <gazebo reference="livox_frame">
+    <sensor name="laser_2d" type="ray">
+      <pose>0 0 0 0 0 0</pose>
+      <always_on>true</always_on>
+      <visualize>true</visualize>
+      <update_rate>12</update_rate>
+      <ray>
+        <scan>
+          <horizontal>
+            <samples>400</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159</min_angle>
+            <max_angle>3.14159</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.1</min>
+          <max>30.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.02</stddev>
+        </noise>
+      </ray>
+      <plugin name="gazebo_ros_laser_2d" filename="libgazebo_ros_ray_sensor.so">
+        <ros>
+          <remapping>~/out:=/scan</remapping>
+        </ros>
+        <output_type>sensor_msgs/LaserScan</output_type>
+        <frame_name>livox_frame</frame_name>
+      </plugin>
+    </sensor>
+  </gazebo>
+</xacro:if>
+
+<!-- Generic RGB-D simulation, not a calibrated Orbbec optical model. -->
+<xacro:if value="$(arg enable_camera)">
+  <gazebo reference="camera_link">
+    <sensor name="depth_camera" type="depth">
+      <pose>0.021 0 0 0 0 0</pose>
+      <always_on>true</always_on>
+      <update_rate>15</update_rate>
+      <camera>
+        <horizontal_fov>1.0472</horizontal_fov>
+        <image><width>640</width><height>480</height><format>R8G8B8</format></image>
+        <clip><near>0.1</near><far>10</far></clip>
+      </camera>
+      <plugin name="gazebo_ros_camera" filename="libgazebo_ros_camera.so">
+        <!-- camera_name already supplies the camera topic prefix. -->
+        <camera_name>camera</camera_name>
+        <frame_name>camera_optical_frame</frame_name>
+        <min_depth>0.1</min_depth><max_depth>10</max_depth>
+      </plugin>
+    </sensor>
+  </gazebo>
+</xacro:if>
+
+<!-- Simulated IMU published directly as sensor_msgs/Imu. -->
+<gazebo reference="imu_link">
+  <sensor name="imu_sensor" type="imu">
+    <pose>0 0 0 0 0 0</pose>
+    <always_on>true</always_on>
+    <update_rate>${imu_update_rate}</update_rate>
+    <imu>
+      <angular_velocity>
+        <x><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev></noise></x>
+        <y><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev></noise></y>
+        <z><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev></noise></z>
+      </angular_velocity>
+      <linear_acceleration>
+        <x><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev></noise></x>
+        <y><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev></noise></y>
+        <z><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev></noise></z>
+      </linear_acceleration>
+    </imu>
+    <plugin name="gazebo_ros_imu" filename="libgazebo_ros_imu_sensor.so">
+      <ros>
+        <remapping>~/out:=/mobile_base/sensors/imu_data</remapping>
+      </ros>
+      <frame_name>imu_link</frame_name>
+      <initial_orientation_as_reference>false</initial_orientation_as_reference>
+    </plugin>
+  </sensor>
+</gazebo>
+
+<!-- Ground truth for experiments only; this does not feed control. -->
+<gazebo>
+  <plugin name="gazebo_ros_ground_truth" filename="libgazebo_ros_p3d.so">
+    <ros>
+      <!-- P3D publishes on odom, unlike the sensor plugins' ~/out. -->
+      <remapping>odom:=/ground_truth/odom</remapping>
+    </ros>
+    <body_name>base_footprint</body_name>
+    <frame_name>world</frame_name>
+    <update_rate>100.0</update_rate>
+    <gaussian_noise>0.0</gaussian_noise>
+  </plugin>
+</gazebo>
+
+</robot>

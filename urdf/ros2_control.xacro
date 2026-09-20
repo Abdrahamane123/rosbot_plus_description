@@ -1,0 +1,137 @@
+<?xml version="1.0" ?>
+<robot name="rosbot_plus" xmlns:xacro="http://www.ros.org/wiki/xacro">
+<!-- ===================================================================== -->
+<!-- ros2_control configuration for rear propulsion and front Ackermann steering    -->
+<!-- Supports: Gazebo Classic (sim_mode=true) / real hardware             -->
+<!-- (sim_mode=false)                                                       -->
+<!-- Real hardware plugin is a TODO placeholder until the Jetson Orin      -->
+<!-- driver stack for the real robot is chosen (see project doc §6).      -->
+<!-- ===================================================================== -->
+
+<xacro:if value="$(arg sim_mode)">
+    <!-- ============ GAZEBO CLASSIC SIMULATION ============ -->
+    <ros2_control name="GazeboSystem" type="system">
+        <hardware>
+            <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+        </hardware>
+
+        <!-- Drive joints. The velocity command bounds are the datasheet top -->
+        <!-- speed (2.33 m/s over a 0.127 m radius = 18.35 rad/s) plus 10%   -->
+        <!-- headroom, not a round number.                                    -->
+        <!--                                                                  -->
+        <!-- The effort STATE interface is what the simulated equivalent of a -->
+        <!-- motor current reading comes from. The project doc's architecture -->
+        <!-- (section 4) feeds the C1 capability model with an online payload -->
+        <!-- estimate derived from "suspensions, motor currents"; without     -->
+        <!-- this interface that input has no source at all in simulation.    -->
+        <xacro:macro name="drive_joint" params="name">
+            <joint name="${name}">
+                <command_interface name="velocity">
+                    <param name="min">${-wheel_omega_max*1.1}</param>
+                    <param name="max">${wheel_omega_max*1.1}</param>
+                </command_interface>
+                <state_interface name="velocity"/>
+                <state_interface name="position"/>
+                <state_interface name="effort"/>
+            </joint>
+        </xacro:macro>
+
+        <xacro:macro name="steering_control" params="name">
+          <joint name="${name}">
+            <command_interface name="position">
+              <param name="min">-0.6</param><param name="max">0.6</param>
+            </command_interface>
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+            <state_interface name="effort"/>
+          </joint>
+        </xacro:macro>
+        <xacro:steering_control name="FL_steering_joint"/>
+        <xacro:steering_control name="FR_steering_joint"/>
+        <xacro:drive_joint name="RL_Joint"/>
+        <xacro:drive_joint name="RR_Joint"/>
+
+        <!-- Passive suspension joints (prismatic, spring/damper governed).     -->
+        <!-- NOT actuated: no command_interface. They are exposed as state-only -->
+        <!-- interfaces so joint_state_broadcaster publishes their position on   -->
+        <!-- /joint_states. Without this, robot_state_publisher has no source    -->
+        <!-- for base_link -> *_knuckle and the whole *_knuckle -> *_Link wheel  -->
+        <!-- chain has no TF, so RViz collapses all four wheels onto the origin. -->
+        <!--                                                                    -->
+        <!-- Position is also the second half of the payload estimator: static  -->
+        <!-- sag is m_corner*g/k, so the four suspension positions give the     -->
+        <!-- sprung mass AND its distribution (hence the CoM shift caused by an -->
+        <!-- off-centre load) without any extra sensor. That is the simulated   -->
+        <!-- counterpart of the real robot's suspension travel measurement.     -->
+        <xacro:macro name="suspension_joint_ctl" params="name">
+            <joint name="${name}">
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+                <state_interface name="effort"/>
+            </joint>
+        </xacro:macro>
+
+        <!-- Front wheels roll freely; only rear wheels receive motor commands. -->
+        <xacro:suspension_joint_ctl name="FR_Joint"/>
+        <xacro:suspension_joint_ctl name="FL_Joint"/>
+        <xacro:suspension_joint_ctl name="FR_suspension_joint"/>
+        <xacro:suspension_joint_ctl name="FL_suspension_joint"/>
+        <xacro:suspension_joint_ctl name="RL_suspension_joint"/>
+        <xacro:suspension_joint_ctl name="RR_suspension_joint"/>
+    </ros2_control>
+
+    <gazebo>
+        <!-- Classic reuses this name as a ROS node name: do not use '::'. -->
+        <plugin filename="libgazebo_ros2_control.so"
+                name="gazebo_ros2_control">
+            <robot_param>robot_description</robot_param>
+            <robot_param_node>robot_state_publisher</robot_param_node>
+            <parameters>$(find rosbot_plus_description)/config/my_controllers.yaml</parameters>
+            <ros>
+                <remapping>/steering_cont/reference_unstamped:=/cmd_vel</remapping>
+                <remapping>/steering_cont/odometry:=/odom</remapping>
+                <remapping>/steering_cont/tf_odometry:=/tf</remapping>
+            </ros>
+        </plugin>
+    </gazebo>
+</xacro:if>
+
+<xacro:unless value="$(arg sim_mode)">
+    <!-- ============ REAL HARDWARE (TODO) ============ -->
+    <!-- Placeholder: to be replaced with the actual Jetson Orin / motor    -->
+    <!-- controller driver once the real-robot bring-up phase starts.      -->
+    <ros2_control name="RealRobot" type="system">
+        <hardware>
+            <plugin>mock_components/GenericSystem</plugin>
+        </hardware>
+
+        <xacro:macro name="mock_steering" params="name">
+          <joint name="${name}">
+            <command_interface name="position"/>
+            <state_interface name="position"/>
+          </joint>
+        </xacro:macro>
+        <xacro:mock_steering name="FL_steering_joint"/>
+        <xacro:mock_steering name="FR_steering_joint"/>
+        <joint name="FR_Joint">
+            <state_interface name="velocity"/>
+            <state_interface name="position"/>
+        </joint>
+        <joint name="FL_Joint">
+            <state_interface name="velocity"/>
+            <state_interface name="position"/>
+        </joint>
+        <joint name="RL_Joint">
+            <command_interface name="velocity"/>
+            <state_interface name="velocity"/>
+            <state_interface name="position"/>
+        </joint>
+        <joint name="RR_Joint">
+            <command_interface name="velocity"/>
+            <state_interface name="velocity"/>
+            <state_interface name="position"/>
+        </joint>
+    </ros2_control>
+</xacro:unless>
+
+</robot>

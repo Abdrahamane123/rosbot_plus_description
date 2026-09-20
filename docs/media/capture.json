@@ -1,0 +1,21 @@
+{
+  "world": "demo_obstacles.sdf with a temporary overview camera",
+  "capture": "Gazebo camera frames, no generated imagery",
+  "frame_rate": 5,
+  "frames": 49,
+  "complete_sequence": true,
+  "width": 960,
+  "height": 540,
+  "duration_seconds": 9.8,
+  "commands": "idle, forward 0.2 m/s, left turn 0.2 m/s and 0.12 rad/s, reverse -0.15 m/s, stop",
+  "simulated_sequence_seconds": 14,
+  "timing_note": "Frames sampled from Gazebo and played at 5 fps; this 9.8-second clip condenses 14 simulated seconds. Not suitable for measuring velocity from playback.",
+  "camera_pose_xyz_rpy": [
+    2.7,
+    -3.2,
+    1.8,
+    0,
+    0.39,
+    2.32
+  ]
+}

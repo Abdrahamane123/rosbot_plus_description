@@ -1,0 +1,107 @@
+# FAST-LIO2 configuration for the SIMULATED Mid-360 on the ROSbot Plus.
+#
+# Kept here rather than in FAST_LIO/config so the upstream repo stays pristine
+# (it is a plain checkout of Ericsii/FAST_LIO). Point the launch at this
+# directory with config_path:=<this dir>.
+#
+# THIS IS NOT A COPY OF mid360.yaml. Two things differ, and both matter:
+#
+#  1. lidar_type. mid360.yaml uses 4 and its comment claims that means "any
+#     other pointcloud input". In THIS fork that comment is stale: the enum is
+#     AVIA=1, VELO16=2, OUST64=3, MID360=4, so 4 dispatches to mid360_handler,
+#     which deserialises into livox_ros::LivoxPointXyzitl and needs per-point
+#     `line` and `tag` fields. The Gazebo ROS plugin publishes only
+#         x, y, z, intensity, ring
+#     (verified on the running sim), so `line` would come back zero for every
+#     point and the scan-line logic would collapse onto one layer.
+#     lidar_type 5 falls through to default_handler, which reads plain
+#     pcl::PointXYZI - exactly what the plugin provides.
+#
+#  2. Topics. The real driver publishes /livox/lidar and /livox/imu; the
+#     simulation publishes /mid360/points and /imu/data. FAST-LIO is pointed
+#     at /mid360/points_clean, the output of the cloud_sanitize node: Gazebo emits
+#     an infinite range for every ray that hits nothing (89% of them on the
+#     flat world, since the Mid-360 FOV mostly points upward), and
+#     default_handler accepts inf because inf > blind. Without the sanitiser
+#     the filter silently never converges.
+#
+# KNOWN FIDELITY LIMIT: default_handler sets curvature (per-point time offset)
+# to zero, so there is NO motion de-skewing - every point in a scan is treated
+# as simultaneous. At 10 Hz and 0.4 m/s that is a 4 cm smear, tolerable for
+# bring-up but not for the C4 detection work. Fixing it means emitting a
+# per-point time field from the simulated sensor, which the Classic gpu_ray
+# sensor does not do; see gazebo_classic_plugins.xacro.
+
+/**:
+    ros__parameters:
+        feature_extract_enable: false
+        point_filter_num: 3
+        max_iteration: 3
+        filter_size_surf: 0.5
+        filter_size_map: 0.5
+        cube_side_length: 1000.0
+        runtime_pos_log_enable: false
+        map_file_path: "./test.pcd"
+
+        common:
+            lid_topic:  "/mid360/points_clean"
+            imu_topic:  "/imu/data"
+            time_sync_en: false
+            time_offset_lidar_to_imu: 0.0
+
+        preprocess:
+            lidar_type: 5                # -> default_handler (plain PointXYZI)
+            scan_line:  64               # vertical samples in gazebo_classic_plugins.xacro
+            blind: 0.5
+            timestamp_unit: 3
+            scan_rate: 10                # sensor update_rate in gazebo_classic_plugins.xacro
+
+        mapping:
+            acc_cov: 0.1
+            gyr_cov: 0.1
+            b_acc_cov: 0.0001
+            b_gyr_cov: 0.0001
+            fov_degree:    360.0
+            det_range:     40.0          # matches the simulated sensor's max range
+
+            # The IMU->LiDAR extrinsic is EXACTLY known in simulation, straight
+            # from the URDF: imu_joint sits at z = 0.2195 and livox_joint at
+            # z = 0.3490 on base_link, both on the centreline, no rotation.
+            # So the lidar is 0.1295 m directly above the IMU.
+            #
+            # Online estimation is therefore switched OFF. Letting it run would
+            # add a free parameter that can only drift away from a value we
+            # already know perfectly, and any drift it absorbed would be
+            # mistaken for a real calibration error when moving to hardware.
+            # Turn it back on for the real robot, where the mount is measured
+            # rather than declared.
+            extrinsic_est_en:  false
+            extrinsic_T: [ 0.0, 0.0, 0.1295 ]
+            extrinsic_R: [ 1., 0., 0.,
+                            0., 1., 0.,
+                            0., 0., 1.]
+
+        publish:
+            path_en: true
+            effect_map_en: false
+            map_en: true
+            scan_publish_en:  true
+
+            # MUST be true when an elevation map consumes /cloud_registered.
+            # With dense_publish_en false, FAST-LIO republishes the cloud it
+            # kept for the EKF - decimated by filter_size_surf, i.e. one point
+            # per 0.5 m voxel. Measured: 300 points per frame out of the 11773
+            # the sanitiser passed in, ten times coarser than the 0.05 m
+            # elevation grid. The map then covers almost nothing and the C4
+            # detector finds no height contrast, with nothing anywhere saying
+            # the cloud was thinned.
+            dense_publish_en: true
+
+            scan_bodyframe_pub_en: true
+
+        pcd_save:
+            # Off by default: a campaign that ran this with pcd_save_en would
+            # accumulate every frame of every trial into one file and exhaust
+            # memory. Enable deliberately, for a single run.
+            pcd_save_en: false
+            interval: -1

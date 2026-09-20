@@ -1,0 +1,26 @@
+<?xml version="1.0" ?>
+<robot name="rosbot_plus" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+<material name="white">
+  <color rgba="1.0 1.0 1.0 1.0"/>
+</material>
+
+<material name="black">
+  <color rgba="0.1 0.1 0.1 1.0"/>
+</material>
+
+<material name="dark_grey">
+  <color rgba="0.3 0.3 0.3 1.0"/>
+</material>
+
+<material name="red">
+  <color rgba="0.8 0.0 0.0 1.0"/>
+</material>
+
+<!-- Payload block: deliberately loud, so a campaign screenshot or a replay
+     immediately shows whether the run was laden or unladen. -->
+<material name="orange">
+  <color rgba="0.95 0.5 0.1 1.0"/>
+</material>
+
+</robot>

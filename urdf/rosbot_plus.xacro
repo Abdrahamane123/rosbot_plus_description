@@ -1,0 +1,318 @@
+<?xml version="1.0" ?>
+<robot name="rosbot_plus" xmlns:xacro="http://www.ros.org/wiki/xacro">
+<!-- ===================================================================== -->
+<!-- ROSbot-inspired rear-drive platform with front Ackermann steering,       -->
+<!-- independent suspension, LS LiDAR approximation, RGB-D camera + IMU.                                      -->
+<!--                                                                       -->
+<!-- All physical numbers live in params.xacro, each with a provenance tag -->
+<!-- ([SPEC] / [DERIVED] / [EST] / [CALIB]). This file only assembles the  -->
+<!-- kinematic tree; do not hard-code a dimension or a mass here.          -->
+<!-- ===================================================================== -->
+
+<!-- ========================== ARGUMENTS ================================ -->
+<xacro:arg name="use_ros2_control" default="true"/>
+<xacro:arg name="sim_mode" default="false"/>
+
+<!-- LS LiDAR mount, estimated from the Roboworks product photograph.
+     Keep livox_frame as a compatibility name for existing RViz configs. -->
+<xacro:arg name="enable_lidar" default="true"/>
+<xacro:arg name="enable_camera" default="true"/>
+<xacro:arg name="imu_update_rate" default="200"/>
+<xacro:arg name="lidar_tilt_deg" default="0"/>
+<xacro:arg name="lidar_riser_m" default="0.025"/>
+<xacro:property name="lidar_riser" value="$(arg lidar_riser_m)"/>
+<xacro:arg name="lidar_x_offset_m" default="0.20"/>
+<xacro:property name="lidar_x_offset" value="$(arg lidar_x_offset_m)"/>
+
+<!-- Payload, swept by the section 5.1 campaign. Mass in kg; x/z locate it -->
+<!-- relative to base_link, so the campaign can vary CoM height as well as -->
+<!-- weight. payload_mass=0 instantiates no payload link at all.           -->
+<!-- payload_z default puts the 0.3 m cube resting on the chassis roof     -->
+<!-- (roof at ground_clearance + chassis_height = 0.319, plus half a cube).-->
+<xacro:arg name="payload_mass" default="0.0"/>
+<xacro:arg name="payload_x"    default="0.265"/>
+<xacro:arg name="payload_z"    default="0.469"/>
+
+<!-- ========================== INCLUDES ================================= -->
+<xacro:include filename="$(find rosbot_plus_description)/urdf/params.xacro" />
+<xacro:include filename="$(find rosbot_plus_description)/urdf/materials.xacro" />
+<xacro:include filename="$(find rosbot_plus_description)/urdf/gazebo_classic_plugins.xacro" />
+
+<xacro:if value="$(arg use_ros2_control)">
+    <xacro:include filename="$(find rosbot_plus_description)/urdf/ros2_control.xacro" />
+</xacro:if>
+
+<!-- ========================== INERTIAS ================================= -->
+<xacro:property name="chassis_ixx" value="${chassis_mass/12*(chassis_width*chassis_width+chassis_height*chassis_height)}"/>
+<xacro:property name="chassis_iyy" value="${chassis_mass/12*(chassis_length*chassis_length+chassis_height*chassis_height)}"/>
+<xacro:property name="chassis_izz" value="${chassis_mass/12*(chassis_length*chassis_length+chassis_width*chassis_width)}"/>
+<xacro:property name="wheel_ixx" value="${wheel_mass/12*(3*wheel_radius*wheel_radius+wheel_width*wheel_width)}"/>
+<xacro:property name="wheel_iyy" value="${wheel_mass*wheel_radius*wheel_radius/2}"/>
+
+<!-- ========================== BASE FOOTPRINT =========================== -->
+<!-- CAVEAT: base_footprint is rigidly tied to base_link, and base_link is
+     placed at wheel-centre height minus the wheel radius, i.e. at ground
+     level only when the suspension is at rest length. Because the springs
+     sag under load, base_footprint actually sits BELOW the ground by the
+     current sag: about 10 mm unladen and 20 mm at 22 kg payload.
+
+     Confirmed in a trial: on an 0.080 m step the ground-truth z settled at
+     0.0695 m = 0.080 - 0.0105 of sag.
+
+     Harmless for the physics campaigns, which score against simulator ground
+     truth, and the trial runner's height tolerance is wide enough to absorb
+     it. It does need attention before Nav2 integration, where base_footprint
+     is assumed to be the ground projection of the robot and a costmap built
+     from a frame 20 mm underground will mis-place obstacle heights.
+     A fixed 10 mm offset here would only be correct at one payload; the
+     honest fix is to publish base_footprint from the measured suspension
+     state rather than as a fixed joint. -->
+<link name="base_footprint"/>
+
+<joint name="base_footprint_joint" type="fixed">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+</joint>
+
+<!-- ========================== CHASSIS ================================== -->
+<link name="base_link">
+    <!-- The inertial origin carries the CoM offset from params.xacro; the -->
+    <!-- visual and collision boxes stay on the geometric centre. Keeping  -->
+    <!-- them apart is what lets the descent-tipping behaviour be          -->
+    <!-- calibrated without distorting the robot's outline.                -->
+    <inertial>
+        <origin xyz="${chassis_x + com_x_offset} 0 ${chassis_z + com_z_offset}" rpy="0 0 0"/>
+        <mass value="${chassis_mass}"/>
+        <inertia ixx="${chassis_ixx}" ixy="0.0" ixz="0.0"
+                 iyy="${chassis_iyy}" iyz="0.0"
+                 izz="${chassis_izz}"/>
+    </inertial>
+    <visual>
+        <origin xyz="${chassis_x} 0 ${chassis_z}" rpy="0 0 0"/>
+        <geometry>
+            <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+        </geometry>
+        <material name="white"/>
+    </visual>
+    <collision>
+        <origin xyz="${chassis_x} 0 ${chassis_z}" rpy="0 0 0"/>
+        <geometry>
+            <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+        </geometry>
+    </collision>
+</link>
+
+<!-- ========================== PAYLOAD ================================== -->
+<!-- Instantiated only when a payload is actually commanded, so the        -->
+<!-- unladen model stays exactly at the datasheet's 35.16 kg.              -->
+<xacro:if value="${payload_mass > 0.0}">
+    <link name="payload_link">
+        <inertial>
+            <mass value="${payload_mass}"/>
+            <!-- Treated as a compact 0.3 m cube of uniform density: the -->
+            <!-- campaign varies mass and height, not shape.             -->
+            <inertia ixx="${payload_mass*0.015}" ixy="0" ixz="0"
+                     iyy="${payload_mass*0.015}" iyz="0"
+                     izz="${payload_mass*0.015}"/>
+        </inertial>
+        <visual>
+            <geometry><box size="0.3 0.3 0.3"/></geometry>
+            <material name="orange"/>
+        </visual>
+    </link>
+
+    <joint name="payload_joint" type="fixed">
+        <origin xyz="${payload_x} 0 ${payload_z}" rpy="0 0 0"/>
+        <parent link="base_link"/>
+        <child link="payload_link"/>
+    </joint>
+</xacro:if>
+
+<!-- ========================== WHEEL + SUSPENSION MACRO ================= -->
+<!-- Each wheel hangs off base_link through a passive prismatic            -->
+<!-- "suspension" joint (vertical travel, spring+damper) then spins on a   -->
+<!-- continuous joint on the resulting "knuckle" link. ros2_control only   -->
+<!-- commands the spin joint; the suspension joint is left uncontrolled    -->
+<!-- so gravity/contact and the spring/damper govern it, like a real       -->
+<!-- independent suspension.                                               -->
+<!--                                                                       -->
+<!-- The spring is also declared as a Gazebo Classic joint extension in    -->
+<!-- gazebo_classic_plugins.xacro, because that is what ODE uses for this  -->
+<!-- model. Keep the URDF dynamics attribute so non-Gazebo consumers still -->
+<!-- see the intended stiffness.                                           -->
+<xacro:macro name="wheel" params="prefix x_offset y_offset steering:=false">
+
+    <link name="${prefix}_knuckle">
+        <inertial>
+            <mass value="${knuckle_mass}"/>
+            <inertia ixx="${knuckle_mass*knuckle_size**2/6}" ixy="0" ixz="0"
+                     iyy="${knuckle_mass*knuckle_size**2/6}" iyz="0"
+                     izz="${knuckle_mass*knuckle_size**2/6}"/>
+        </inertial>
+    </link>
+
+    <joint name="${prefix}_suspension_joint" type="prismatic">
+        <parent link="base_link"/>
+        <child link="${prefix}_knuckle"/>
+        <origin xyz="${x_offset} ${y_offset} ${wheel_radius}" rpy="0 0 0"/>
+        <axis xyz="0 0 1"/>
+        <limit lower="${-suspension_travel}" upper="${suspension_travel}" effort="2000" velocity="2"/>
+        <dynamics damping="${suspension_damping}" friction="0.0"
+                  spring_stiffness="${suspension_stiffness}" spring_reference="0.0"/>
+    </joint>
+
+    <xacro:if value="${steering}">
+      <link name="${prefix}_steering_link">
+        <inertial>
+          <mass value="0.2"/>
+          <inertia ixx="0.0003" ixy="0" ixz="0" iyy="0.0003" iyz="0" izz="0.0003"/>
+        </inertial>
+      </link>
+      <joint name="${prefix}_steering_joint" type="revolute">
+        <parent link="${prefix}_knuckle"/><child link="${prefix}_steering_link"/>
+        <axis xyz="0 0 1"/>
+        <limit lower="-0.6" upper="0.6" effort="30" velocity="1.5"/>
+        <dynamics damping="0.5" friction="0.0"/>
+      </joint>
+    </xacro:if>
+    <link name="${prefix}_Link">
+        <inertial>
+            <mass value="${wheel_mass}"/>
+            <inertia ixx="${wheel_ixx}" ixy="0.0" ixz="0.0"
+                     iyy="${wheel_iyy}" iyz="0.0"
+                     izz="${wheel_ixx}"/>
+        </inertial>
+        <visual>
+            <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+            <geometry>
+                <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+            </geometry>
+            <material name="black"/>
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+            <geometry>
+                <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+            </geometry>
+        </collision>
+    </link>
+
+    <!-- effort is the peak (current-limited) wheel torque from            -->
+    <!-- params.xacro, not an arbitrary large number: it is what stops the -->
+    <!-- velocity-commanded wheel from climbing anything put in front of   -->
+    <!-- it. velocity is the datasheet top speed with 10% headroom.        -->
+    <joint name="${prefix}_Joint" type="continuous">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <parent link="${prefix + ('_steering_link' if steering else '_knuckle')}"/>
+        <child link="${prefix}_Link"/>
+        <axis xyz="0 1 0"/>
+        <limit effort="${wheel_torque_peak}" velocity="${wheel_omega_max*1.1}"/>
+        <dynamics damping="${wheel_joint_damping}" friction="${wheel_joint_friction}"/>
+    </joint>
+</xacro:macro>
+
+<!-- Instantiate 4 wheels: rear axle at x=0 (base_link origin), front axle at x=wheelbase -->
+<xacro:wheel prefix="RL" x_offset="0.0"          y_offset="${track_half}"/>
+<xacro:wheel prefix="RR" x_offset="0.0"          y_offset="${-track_half}"/>
+<xacro:wheel prefix="FL" x_offset="${wheelbase}" y_offset="${track_half}" steering="${True}"/>
+<xacro:wheel prefix="FR" x_offset="${wheelbase}" y_offset="${-track_half}" steering="${True}"/>
+
+<!-- ========================== SENSORS ================================== -->
+
+<!-- LS LiDAR approximation; legacy frame name retained for compatibility. -->
+<link name="livox_frame">
+    <inertial>
+        <mass value="${livox_mass}"/>
+        <inertia ixx="1e-3" ixy="0" ixz="0" iyy="1e-3" iyz="0" izz="1e-3"/>
+    </inertial>
+    <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+            <cylinder radius="0.0525" length="0.06"/>
+        </geometry>
+        <material name="black"/>
+    </visual>
+    <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+            <cylinder radius="0.0525" length="0.06"/>
+        </geometry>
+    </collision>
+</link>
+
+<joint name="livox_joint" type="fixed">
+    <!-- Mounted on top of the chassis, looking forward, pitched down by
+         lidar_tilt_deg and moved forward by lidar_x_offset_m. Positive pitch
+         in this frame tips the sensor's nose downward, which is the sense
+         that reduces the ground blind radius. -->
+    <origin xyz="${chassis_x + lidar_x_offset} 0
+                 ${chassis_z + chassis_height/2 + 0.03 + lidar_riser}"
+            rpy="0 ${radians($(arg lidar_tilt_deg))} 0"/>
+    <parent link="base_link"/>
+    <child link="livox_frame"/>
+</joint>
+
+<!-- IMU (kept as a separate link even though the Mid-360 has one built   -->
+<!-- in, so the base IMU frame is independent of the lidar mount).        -->
+<link name="imu_link">
+    <inertial>
+        <mass value="${imu_mass}"/>
+        <inertia ixx="1e-5" ixy="0" ixz="0" iyy="1e-5" iyz="0" izz="1e-5"/>
+    </inertial>
+    <visual>
+        <geometry><box size="0.03 0.03 0.01"/></geometry>
+        <material name="dark_grey"/>
+    </visual>
+    <collision>
+        <geometry><box size="0.03 0.03 0.01"/></geometry>
+    </collision>
+</link>
+
+<joint name="imu_joint" type="fixed">
+    <origin xyz="${chassis_x} 0 ${chassis_z}" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+</joint>
+
+<!-- Approximate Orbbec RGB-D housing and front-facing optical frame.
+     Mount dimensions are estimates, not manufacturer CAD measurements. -->
+<link name="camera_link">
+  <inertial>
+    <mass value="${camera_mass}"/>
+    <inertia ixx="${camera_mass*(0.18**2+0.035**2)/12}" ixy="0" ixz="0"
+             iyy="${camera_mass*(0.04**2+0.035**2)/12}" iyz="0"
+             izz="${camera_mass*(0.04**2+0.18**2)/12}"/>
+  </inertial>
+  <visual>
+    <geometry><box size="0.04 0.18 0.035"/></geometry>
+    <material name="black"/>
+  </visual>
+  <collision><geometry><box size="0.04 0.18 0.035"/></geometry></collision>
+</link>
+<joint name="camera_joint" type="fixed">
+  <parent link="base_link"/><child link="camera_link"/>
+  <origin xyz="${chassis_x+0.31} 0 ${chassis_z+chassis_height/2+0.025}"/>
+</joint>
+<link name="camera_optical_frame"/>
+<joint name="camera_optical_joint" type="fixed">
+  <parent link="camera_link"/><child link="camera_optical_frame"/>
+  <origin xyz="0.021 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+</joint>
+<xacro:macro name="camera_lens" params="y">
+  <link name="camera_lens_${y}">
+    <visual>
+      <origin rpy="0 ${pi/2} 0"/>
+      <geometry><cylinder radius="0.008" length="0.003"/></geometry>
+      <material name="dark_grey"/>
+    </visual>
+  </link>
+  <joint name="camera_lens_joint_${y}" type="fixed">
+    <parent link="camera_link"/><child link="camera_lens_${y}"/>
+    <origin xyz="0.021 ${y} 0"/>
+  </joint>
+</xacro:macro>
+<xacro:camera_lens y="0.06"/>
+<xacro:camera_lens y="0.0"/>
+<xacro:camera_lens y="-0.06"/>
+</robot>

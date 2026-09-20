@@ -1,0 +1,128 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded: ~
+    Tree Height: 600
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 1
+      Line Style:
+        Value: Lines
+      Plane: XY
+      Color: 100; 100; 100
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Enabled: true
+      Show Names: true
+      Show Axes: true
+      Show Arrows: false
+      Marker Scale: 0.4
+    - Class: rviz_default_plugins/RobotModel
+      Name: RobotModel
+      Enabled: true
+      Description Topic:
+        Value: /robot_description
+        Depth: 5
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+      Alpha: 0.9
+    - Class: rviz_default_plugins/LaserScan
+      Name: laser 2D
+      Enabled: true
+      Topic:
+        Value: /scan
+        Depth: 5
+        Reliability Policy: Best Effort
+      Size (m): 0.03
+      Style: Points
+      Color: 0; 255; 255
+    - Class: rviz_default_plugins/PointCloud2
+      Name: FAST-LIO registered
+      Enabled: false # legacy 3D pipeline; not published by the 2D model
+      Topic:
+        Value: /cloud_registered
+        Depth: 5
+        Reliability Policy: Best Effort
+      Size (m): 0.02
+      Style: Points
+      Color Transformer: FlatColor
+      Color: 255; 200; 60
+    - Class: rviz_default_plugins/Path
+      Name: FAST-LIO path
+      Enabled: false # legacy 3D pipeline; not published by the 2D model
+      Topic:
+        Value: /path
+        Depth: 5
+        Reliability Policy: Reliable
+      Color: 255; 85; 0
+      Line Style: Lines
+    - Class: rviz_default_plugins/Odometry
+      Name: ground truth
+      Enabled: false
+      Topic:
+        Value: /ground_truth/odom
+        Depth: 5
+        Reliability Policy: Best Effort
+      Keep: 1
+      Shape:
+        Value: Arrow
+        Color: 0; 255; 0
+    # The C4 input. Colour by `elevation` and the step reads directly as a
+    # height change; switch Color Layer to `spread` to see the edge cells light
+    # up while flat terrain stays black.
+    - Class: grid_map_rviz_plugin/GridMap
+      Name: elevation map
+      Enabled: false # requires the legacy 3D perception pipeline
+      Topic:
+        Value: /elevation_map
+        Depth: 1
+        Reliability Policy: Reliable
+      Show Grid Lines: false
+      Height Layer: elevation
+      Height Transformer: GridMapLayer
+      Color Layer: elevation
+      Color Transformer: IntensityLayer
+      Use Rainbow: true
+      Invert Rainbow: false
+      Autocompute Intensity Bounds: true
+      Alpha: 1
+    # C4 output: one box per detected discontinuity, labelled with its
+    # measured height, approach angle and confidence.
+    - Class: rviz_default_plugins/MarkerArray
+      Name: C4 discontinuities
+      Enabled: false # requires the legacy 3D perception pipeline
+      Topic:
+        Value: /discontinuity_markers
+        Depth: 5
+        Reliability Policy: Reliable
+      Namespaces:
+        {}
+  Global Options:
+    Fixed Frame: base_footprint
+    Background Color: 40; 40; 45
+    Frame Rate: 20
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Name: Current View
+      Distance: 12
+      Pitch: 0.6
+      Yaw: 3.6
+      Focal Point:
+        X: 3
+        Y: 0
+        Z: 0
+Window Geometry:
+  Height: 900
+  Width: 1500
+  Displays:
+    collapsed: false

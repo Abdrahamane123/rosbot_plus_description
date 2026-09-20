@@ -1,0 +1,251 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+<!-- ===================================================================== -->
+<!-- ROSbot Plus 4WD-IS - single source of truth for physical parameters.  -->
+<!--                                                                       -->
+<!-- Every value carries a provenance tag. Nothing in this project should  -->
+<!-- silently mix a datasheet number with a guess:                         -->
+<!--                                                                       -->
+<!--   [SPEC]   Roboworks ROSbot Plus datasheet (roboworks.net, 4WD-IS).   -->
+<!--   [DERIVED] Computed from [SPEC] values; the derivation is written    -->
+<!--            out next to it so a reviewer can check it.                 -->
+<!--   [EST]    Engineering estimate, no source. Replace from the vendor   -->
+<!--            STP/URDF (shipped with the robot) as soon as available.    -->
+<!--   [CALIB]  Free parameter of the sim-to-real calibration of the       -->
+<!--            project doc section 5.2 (max climbable step, unladen and   -->
+<!--            loaded, up and down). Fitted, not guessed.                 -->
+<!--                                                                       -->
+<!-- The feasibility surface of section 5.1 is a purely physical result,   -->
+<!-- so the credibility of the whole project rests on this file.           -->
+<!-- ===================================================================== -->
+
+<!-- ===================== DATASHEET REFERENCE =========================== -->
+<!-- [SPEC] Overall size      L 0.766  W 0.671  H 0.319 m                  -->
+<!-- [SPEC] Mass, unladen     35.16 kg                                     -->
+<!-- [SPEC] Wheels            solid rubber, 254 mm diameter                -->
+<!-- [SPEC] Motors            MD36, 100 W brushed DC, 1:18 reduction, 24 V -->
+<!-- [SPEC] Max speed         2.33 m/s                                     -->
+<!-- [SPEC] Max payload       22 kg (45 kg on the HD variant)              -->
+<!-- [SPEC] Max slope         30 deg                                       -->
+<!-- ===================================================================== -->
+
+<!-- ========================== WHEELS ==================================== -->
+<xacro:property name="wheel_radius" value="0.127"/>   <!-- [SPEC] 254 mm diameter -->
+<xacro:property name="wheel_width"  value="0.08"/>    <!-- [EST] see track check below -->
+<xacro:property name="wheel_mass"   value="2.5"/>     <!-- [EST] solid rubber tyre + hub -->
+
+<!-- ========================== TRACK / WHEELBASE ========================= -->
+<!-- Cross-check that anchors the lateral geometry to the datasheet:       -->
+<!--   track + wheel_width = 0.59 + 0.08 = 0.67 m  vs  [SPEC] W = 0.671 m  -->
+<!-- so track_half and wheel_width are jointly confirmed by the overall    -->
+<!-- width. The wheelbase has no such anchor and stays an estimate.        -->
+<xacro:property name="track_half" value="0.295"/>     <!-- [DERIVED] half of 0.59 -->
+<xacro:property name="wheelbase"  value="0.53"/>      <!-- [EST] no datasheet anchor -->
+
+<!-- ========================== CHASSIS =================================== -->
+<xacro:property name="chassis_length" value="0.766"/> <!-- [SPEC] overall L -->
+<xacro:property name="chassis_width"  value="0.35"/>  <!-- [EST] body only, wheels are outboard -->
+<xacro:property name="overall_height" value="0.319"/> <!-- [SPEC] overall H -->
+
+<!-- Ground clearance is the hard geometric ceiling on climbable step      -->
+<!-- height: the belly grounds out before the wheel ever tops the step, so -->
+<!-- this single number bounds the h axis of the whole section 5.1 sweep.  -->
+<!-- The datasheet does not give it directly.                              -->
+<!--                                                                       -->
+<!-- Rather than guessing clearance and body height independently, the     -->
+<!-- vertical stack-up is forced to close on the datasheet overall height, -->
+<!-- exactly as the mass budget closes on the datasheet total mass. That   -->
+<!-- leaves clearance as the ONLY free parameter of the vertical geometry, -->
+<!-- and 0.12 m places the belly just below the 0.127 m axle line, which   -->
+<!-- is the conventional proportion for a box-chassis AMR with outboard    -->
+<!-- wheels. Refine from the vendor STP/URDF when convenient; it moves the -->
+<!-- predicted maximum step height and nothing else.                       -->
+<xacro:property name="ground_clearance" value="0.12"/>   <!-- [EST] only free vertical param -->
+<xacro:property name="chassis_height"
+    value="${overall_height - ground_clearance}"/>       <!-- [DERIVED] 0.319 - 0.12 = 0.199 -->
+
+<!-- Body box placement. base_link sits on the ground plane at the rear    -->
+<!-- axle, so the box centre is offset forward and up. The body is assumed -->
+<!-- centred on the wheelbase, which leaves overhangs of                   -->
+<!-- (0.766 - 0.53)/2 = 0.118 m front and rear - a plausible proportion.   -->
+<xacro:property name="chassis_x" value="${wheelbase/2}"/> <!-- [DERIVED] centred on wheelbase -->
+<xacro:property name="chassis_z" value="${ground_clearance + chassis_height/2}"/>  <!-- [DERIVED] -->
+
+<!-- Geometric ceiling on step height implied by the above, useful when    -->
+<!-- choosing the sweep range: the belly grounds at h = 0.12 m and the     -->
+<!-- wheel cannot roll onto anything taller than its own radius 0.127 m    -->
+<!-- without help, so a sweep spanning 0 to 0.15 m brackets the limit.     -->
+
+<!-- Centre of mass. Tipping in descent is a named failure mode of the     -->
+<!-- project (doc section 2), and it is governed by CoM height, not by the -->
+<!-- box centroid. The 24 V LFP battery sits low, so the real CoM is below -->
+<!-- the geometric centre; the offset is applied to the inertial origin    -->
+<!-- only, never to the visual/collision boxes.                            -->
+<xacro:property name="com_z_offset" value="-0.03"/>   <!-- [EST] battery low in the frame -->
+<xacro:property name="com_x_offset" value="0.0"/>     <!-- [EST] assumed longitudinally centred -->
+
+<!-- ========================== SENSORS =================================== -->
+<xacro:property name="livox_mass" value="0.265"/>     <!-- [SPEC] Mid-360 datasheet -->
+<xacro:property name="camera_mass" value="0.25"/> <!-- [EST] camera housing -->
+<xacro:property name="imu_mass"   value="0.05"/>      <!-- [EST] -->
+
+<!-- IMU rate. 200 Hz is the real Mid-360's built-in IMU rate, and it is the
+     right default for anything that has to behave like the real robot
+     (FAST-LIO2, sim-to-real transfer).
+
+     IT IS USELESS FOR THE IMPACT-SEVERITY METRIC of doc section 5.5. The same
+     descent sweep (20 kg, h = 0.06..0.16) measured at both rates:
+
+         h        200 Hz     1000 Hz
+         0.06       5.2       150.6
+         0.10       8.3       170.7
+         0.12     195.2       253.1
+         0.14      43.4       473.0
+         0.16       9.1       813.1
+
+     At 200 Hz the metric under-reports by up to a factor of 90 and is not
+     even monotonic in step height; at 1 kHz it rises with height as it must.
+     A rigid impact against a bottomed-out suspension lasts on the order of a
+     millisecond, so 200 Hz samples it essentially at random.
+
+     Raise this to the 1 kHz physics rate for any campaign that reports impact
+     severity. Do NOT raise it for perception or sim-to-real work: an IMU
+     better than the real one would flatter FAST-LIO.
+
+     SEPARATE CAVEAT - the absolute values above are not physical. DART's
+     contact is rigid, with no tyre or structural compliance to spread the
+     impulse, so peak accelerations are systematically overstated (813 m/s2 is
+     83 g). This is the same limitation behind the project doc's request for
+     realistic kp/kd in section 7, which DART cannot honour. Treat peak
+     vertical acceleration as an ORDINAL metric in simulation - useful to rank
+     "which crossing was more violent" - and calibrate its absolute scale
+     against the real robot during the section 5.3 campaign. -->
+<xacro:property name="imu_update_rate" value="$(arg imu_update_rate)"/>
+<xacro:property name="knuckle_size" value="0.10"/> <!-- [EST] equivalent upright envelope -->
+<xacro:property name="knuckle_mass" value="0.6"/>     <!-- [EST] unsprung suspension upright -->
+
+<!-- ========================== MASS BUDGET =============================== -->
+<!-- The one mass that is actually measured is the total. So the chassis   -->
+<!-- mass is DERIVED as the remainder, which keeps the model's total equal -->
+<!-- to the datasheet no matter how the component estimates are later      -->
+<!-- refined. Never set chassis_mass directly.                             -->
+<xacro:property name="total_mass_unladen" value="35.16"/>  <!-- [SPEC] -->
+<xacro:property name="chassis_mass"
+    value="${total_mass_unladen - 4*(wheel_mass + knuckle_mass) - livox_mass - imu_mass - camera_mass - 0.4}"/>
+<!-- [DERIVED] 35.16 - 4*(2.5+0.6) - 0.265 - 0.05 = 22.445 kg -->
+
+<!-- Sprung mass = everything the springs actually carry (chassis and what -->
+<!-- is bolted to it). Wheels and knuckles are unsprung.                   -->
+<xacro:property name="sprung_mass" value="${chassis_mass + livox_mass + imu_mass + camera_mass}"/>
+<xacro:property name="sprung_corner_mass" value="${sprung_mass/4}"/>
+
+<!-- ========================== PAYLOAD =================================== -->
+<!-- The payload is the primary swept variable of the decisive experiment  -->
+<!-- (doc section 5.1: same step height, opposite decisions under load).   -->
+<!-- Both its mass and its height matter: a high payload raises the CoM    -->
+<!-- and promotes tipping, which is a different failure mode from the      -->
+<!-- traction loss caused by its weight alone. Swept from the launch file, -->
+<!-- never edited here.                                                    -->
+<xacro:property name="payload_mass" value="$(arg payload_mass)"/>
+<xacro:property name="payload_x"    value="$(arg payload_x)"/>
+<xacro:property name="payload_z"    value="$(arg payload_z)"/>
+
+<!-- ========================== SUSPENSION =============================== -->
+<!-- Independent suspension, modelled as a vertical prismatic travel with  -->
+<!-- a spring/damper.                                                      -->
+<!--                                                                       -->
+<!-- MODELLING CAVEAT: real independent suspensions on this class of AMR   -->
+<!-- are usually trailing arms (revolute), not vertical sliders. A trailing -->
+<!-- arm changes how the wheel meets a step edge, so this simplification   -->
+<!-- is itself a calibration target. Revisit once the vendor STP shows the -->
+<!-- actual linkage.                                                       -->
+<xacro:property name="suspension_travel" value="0.03"/>       <!-- [EST] +/- 30 mm -->
+<xacro:property name="suspension_stiffness" value="6000"/>    <!-- [CALIB] N/m per wheel -->
+
+<!-- MEASURED, NOT DECLARED. The value above is what reaches the SDF, but  -->
+<!-- the assembled robot behaves as though the springs were ~5500 N/m, a   -->
+<!-- systematic 8-10% softer, identically at 0 kg and at 22 kg payload.    -->
+<!-- This is NOT a mass bookkeeping error: the four measured joint forces  -->
+<!-- sum to 438.6 N against a sprung weight of 438.9 N. Nor is it a DART   -->
+<!-- spring or timestep artefact: an isolated single-joint rig reproduces  -->
+<!-- -mg/k to 0.1% for damping from 50 to 2000 N.s/m and timesteps from    -->
+<!-- 1 ms to 0.1 ms. The cause is in the assembled multi-body model and is -->
+<!-- still open.                                                           -->
+<!--                                                                       -->
+<!-- Why this does not block the project: suspension_stiffness is a        -->
+<!-- [CALIB] parameter, fitted so that the SIMULATED ride height and step  -->
+<!-- behaviour match the REAL robot. A constant offset between declared    -->
+<!-- and effective stiffness is absorbed by that fit. What matters is that -->
+<!-- it is measured rather than assumed, so `ros2 run                      -->
+<!-- rosbot_plus_description check_physics` reports the effective rate on  -->
+<!-- every run instead of letting it drift silently.                       -->
+
+<!-- Static sag = m_corner*g/k = 5.69*9.81/6000 = 9.3 mm unladen, and      -->
+<!-- 18.3 mm with the full 22 kg payload. Both stay inside the 30 mm       -->
+<!-- travel, and the difference between them is exactly the load-dependent -->
+<!-- loss of ground clearance the capability model of C1 has to capture.   -->
+
+<!-- Damping is expressed as a ratio of critical damping rather than as a  -->
+<!-- raw N.s/m, so it stays physically meaningful when k or the mass       -->
+<!-- budget is refit. c = 2*zeta*sqrt(k*m_corner).                         -->
+<!-- zeta = 0.7 is slightly underdamped: enough to kill the rebound that   -->
+<!-- would otherwise cause spurious tipping after a step impact, without   -->
+<!-- locking the suspension solid.                                         -->
+<xacro:property name="suspension_damping_ratio" value="0.7"/> <!-- [CALIB] -->
+<xacro:property name="suspension_damping"
+    value="${2*suspension_damping_ratio*sqrt(suspension_stiffness*sprung_corner_mass)}"/>
+<!-- [DERIVED] 2*0.7*sqrt(6000*5.69) = 259 N.s/m -->
+
+<!-- ========================== DRIVETRAIN ================================ -->
+<!-- Wheel torque, derived twice from independent datasheet figures.       -->
+<!--                                                                       -->
+<!--   Route A, from power and top speed:                                  -->
+<!--     w_max = v_max/r = 2.33/0.127            = 18.35 rad/s             -->
+<!--     tau   = P/w_max = 100/18.35             = 5.45 N.m per wheel      -->
+<!--                                                                       -->
+<!--   Route B, from the quoted 30 deg maximum slope:                      -->
+<!--     F = m*g*sin(30) = 35.16*9.81*0.5        = 172.5 N                 -->
+<!--     tau = (F/4)*r   = 43.1*0.127            = 5.48 N.m per wheel      -->
+<!--                                                                       -->
+<!-- The two routes agree to 0.5%, which is strong evidence that 5.45 N.m  -->
+<!-- is the real continuous capability rather than a coincidence. The      -->
+<!-- previous URDF used effort=50 N.m, roughly 9x this, which would have   -->
+<!-- let the simulated robot climb essentially anything and invalidated    -->
+<!-- the entire feasibility surface.                                       -->
+<xacro:property name="motor_power_w"  value="100.0"/>   <!-- [SPEC] per motor -->
+<xacro:property name="max_speed_mps"  value="2.33"/>    <!-- [SPEC] -->
+<xacro:property name="wheel_omega_max" value="${max_speed_mps/wheel_radius}"/>
+<xacro:property name="wheel_torque_cont" value="${motor_power_w/wheel_omega_max}"/>
+
+<!-- Climbing a step is a sub-second transient, so what bounds it is the   -->
+<!-- peak (current-limited) torque, not the continuous rating. The         -->
+<!-- multiplier is unknown without a motor curve or a current-limit        -->
+<!-- setting, and 3x is a conventional value for a brushed DC drive.       -->
+<!--                                                                       -->
+<!-- THIS IS THE PRIMARY CALIBRATION KNOB. The measured max climbable step -->
+<!-- height (doc section 5.2) identifies it almost on its own: it is the   -->
+<!-- one parameter that moves the climb limit without moving anything else -->
+<!-- that is independently measurable.                                     -->
+<xacro:property name="wheel_torque_peak_ratio" value="3.0"/>  <!-- [CALIB] -->
+<xacro:property name="wheel_torque_peak"
+    value="${wheel_torque_cont*wheel_torque_peak_ratio}"/>
+<!-- [DERIVED] 5.45 * 3.0 = 16.35 N.m per wheel -->
+
+<!-- Small viscous/Coulomb losses in the 1:18 gearbox, referred to the     -->
+<!-- wheel. Kept low so they do not silently eat into the torque budget.   -->
+<xacro:property name="wheel_joint_damping"  value="0.05"/>   <!-- [EST] -->
+<xacro:property name="wheel_joint_friction" value="0.05"/>   <!-- [EST] -->
+
+<!-- ========================== TYRE FRICTION ============================= -->
+<!-- The 30 deg slope spec is itself a friction measurement: climbing it   -->
+<!-- without slipping requires mu >= tan(30) = 0.577. So mu is bounded     -->
+<!-- below by the datasheet, and 1.0 (solid rubber on concrete) leaves a   -->
+<!-- reasonable margin above that floor. The previous value of 1.5 was     -->
+<!-- optimistic for rubber on concrete.                                    -->
+<!-- mu2 (lateral) must stay well below mu or a 4WD skid-steer cannot      -->
+<!-- rotate at all.                                                        -->
+<!-- Both are confirmed by the traction test of doc section 5.3.           -->
+<xacro:property name="wheel_mu"  value="1.0"/>   <!-- [CALIB] floor 0.577 from 30 deg spec -->
+<xacro:property name="wheel_mu2" value="0.7"/>   <!-- [CALIB] lateral, enables skid-steer -->
+
+</robot>
