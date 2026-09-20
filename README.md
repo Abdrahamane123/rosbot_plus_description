@@ -38,7 +38,7 @@ This is a functional demonstration of the simplified model; see the
 
 ## Start here
 
-1. Install dependencies and build the package.
+1. Install dependencies, [clone the repository](#2-create-the-workspace-and-clone-the-repository), and build the package.
 2. Launch the obstacle demo with Gazebo and RViz.
 3. Drive through `/cmd_vel` with the standard ROS keyboard teleoperation node.
 4. Record ROS topics and report the exact simulation configuration with results.
@@ -48,18 +48,34 @@ and [validation status](docs/validation.md) for details.
 
 ## Installation
 
+### 1. Install dependencies
+
 Install ROS 2 Humble using the [official Ubuntu instructions](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html)
-first. Place this package at `~/dev_ws/src/rosbot_plus_description`.
-The commands below assume Bash and that workspace location.
+first. The commands below use Bash and create a workspace at `~/dev_ws`.
 
 ```bash
 sudo apt update
-sudo apt install python3-colcon-common-extensions python3-rosdep \
+sudo apt install git python3-colcon-common-extensions python3-rosdep \
   ros-humble-xacro ros-humble-gazebo-ros-pkgs \
   ros-humble-gazebo-ros2-control ros-humble-ros2-controllers \
   ros-humble-ackermann-steering-controller \
   ros-humble-teleop-twist-keyboard ros-humble-rviz2
 ```
+
+### 2. Create the workspace and clone the repository
+
+Run these three commands in a terminal:
+
+```bash
+mkdir -p ~/dev_ws/src
+cd ~/dev_ws/src
+git clone https://github.com/Abdrahamane123/rosbot_plus_description.git
+```
+
+If you already have this repository at `~/dev_ws/src/rosbot_plus_description`,
+skip the clone step and continue below.
+
+### 3. Build the package
 
 Initialize rosdep once on a new machine (`sudo rosdep init`), then resolve all
 package dependencies, including those of the retained legacy perception tools:
@@ -125,8 +141,35 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard \
   --ros-args -p speed:=0.2 -p turn:=0.1
 ```
 
+Use these settings for both forward and reverse turns. The keyboard's default
+0.5 m/s and 1.0 rad/s request an inside-wheel angle of about 1.20 rad with this
+model's geometry, exceeding its 0.6 rad steering limit. The settings above
+request about 0.30 rad. Increasing yaw rate or decreasing linear speed alone
+can again make the requested turn too tight.
+
 Keep focus in the keyboard terminal: `i` moves forward, `,` moves backward,
-`u`/`o` request forward turns, and `k` stops. A command expires after 0.5 seconds
+`u`/`o` request forward turns, and `k` stops.
+
+| Character received | Motion | Front steering |
+| --- | --- | --- |
+| `m` | Reverse, negative yaw rate | Left |
+| `,` | Reverse straight | Straight |
+| `.` | Reverse, positive yaw rate | Right |
+
+The node reads characters, not physical key positions. On AZERTY or a keyboard
+whose active layout differs from its printed labels, locate the keys that
+actually produce `m`, `,` and `.`. A semicolon `;` or colon `:` is not a standard
+motion binding. Capital `M` and `>` select holonomic commands and should not
+be used for this Ackermann robot. In reverse, steering left produces a
+negative body yaw rate; the nose turns right as the rear moves left.
+
+If a reverse turn does not work, observe `ros2 topic echo /cmd_vel` in a second
+terminal while using the gentle settings above. For `m`, expect `linear.x:
+-0.2` and `angular.z: -0.1`; for `.`, expect `linear.x: -0.2` and `angular.z:
+0.1`. A zero command points to a key/layout issue. Correct commands with no
+steering response require controller/joint inspection instead.
+
+A command expires after 0.5 seconds
 without a new message. Depending on the teleoperation version, holding a key
 uses the operating system's key repeat; joystick input is convenient for
 continuous driving:
